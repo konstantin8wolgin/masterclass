@@ -1,0 +1,16 @@
+name = "phi4_linear"
+uuid = "00000000-0000-0000-0000-000000000002"
+version = "0.1.0"
+
+[deps]
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+
+[compat]
+Interpolations = "0.16.2"
+JLD2 = "0.6.4"
+Plots = "1.41.6"
+QuadGK = "2.11.3"
+julia = "1.10"
