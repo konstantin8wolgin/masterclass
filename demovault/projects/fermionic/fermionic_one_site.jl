@@ -138,7 +138,53 @@ let
 end
 
 # %% Phase 2: Partition function and analytic observables
-# (filled in by Task 6-7)
+#
+# Direct Fock-trace formulas:
+#   Z          = 1 + 2 e^{βμ} + e^{β(2μ - U)}
+#   ⟨n⟩       = (2 e^{βμ} + 2 e^{β(2μ - U)}) / Z
+#   ⟨n²⟩       = (2 e^{βμ} + 4 e^{β(2μ - U)}) / Z
+#   ⟨n↑ n↓⟩  = e^{β(2μ - U)} / Z
+
+"""
+    fock_trace_observables(U, beta, mu) -> NamedTuple
+
+Closed-form `Z, ⟨n⟩, ⟨n²⟩, ⟨n↑n↓⟩` from summing the 4 Fock states.
+"""
+function fock_trace_observables(U::Float64, beta::Float64, mu::Float64)
+    z1 = 2 * exp(beta * mu)
+    z2 = exp(beta * (2mu - U))
+    Z = 1.0 + z1 + z2
+    n_mean   = (z1 + 2 * z2) / Z
+    n2_mean  = (z1 + 4 * z2) / Z
+    nup_ndown = z2 / Z
+    return (; Z, n_mean, n2_mean, nup_ndown)
+end
+
+"""
+    gaussian_integral_Z(U, beta, mu) -> Float64
+
+Z computed from the three-Gaussian decomposition by closed-form
+integration of each component:
+    ∫ e^{-(φ - i m_j)^2 / (2σ²)} dφ = sqrt(2π σ²)
+Multiplied by the HS normalisation N = sqrt(β/(2π U)) the result must
+match the Fock-trace `Z`.
+"""
+function gaussian_integral_Z(U::Float64, beta::Float64, mu::Float64)
+    w, _, σ2 = mixture_params(U, beta, mu)
+    N = sqrt(beta / (2π * U))
+    return N * sum(w) * sqrt(2π * σ2)
+end
+
+# Verification gate: closed-form Z from the mixture equals the Fock trace.
+let
+    cases = [(U, β, μ) for U in (1.0, 4.0), β in (2.0, 10.0), μ in (0.0, 1.0)]
+    for (U, β, μ) in cases
+        z_trace = fock_trace_observables(U, β, μ).Z
+        z_gauss = gaussian_integral_Z(U, β, μ)
+        @assert isapprox(z_trace, z_gauss; atol=1e-12, rtol=1e-12) "Z mismatch at (U,β,μ)=($U,$β,$μ): trace=$z_trace gauss=$z_gauss"
+    end
+    println("Z(Fock trace) == Z(Gaussian integral) for all 8 cases  ✓")
+end
 
 # %% Phase 3: PIK sampler
 # (filled in by Task 8-9)
