@@ -44,6 +44,22 @@ let
     println("S(0) = $s0  ✓")
 end
 
+# Plot Re S, Im S, |e^{-S}| for the headline parameters over phi in [-6, 6].
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    phi_grid = range(-6.0, 6.0; length=801)
+    s_vals = S.(phi_grid, U, beta, mu)
+    p1 = plot(phi_grid, real.(s_vals); xlabel="φ", ylabel="Re S(φ)",
+              title="Re S", label="", lw=2)
+    p2 = plot(phi_grid, imag.(s_vals); xlabel="φ", ylabel="Im S(φ)",
+              title="Im S", label="", lw=2)
+    p3 = plot(phi_grid, abs.(exp.(-s_vals)); xlabel="φ", ylabel="|e^{-S}|",
+              title="|e^{-S}|", label="", lw=2)
+    pcombined = plot(p1, p2, p3; layout=(1,3), size=(1200, 350))
+    savefig(pcombined, joinpath(@__DIR__, "data", "01_action_check.png"))
+    println("Saved data/01_action_check.png")
+end
+
 # %% Phase 1: Analytic three-Gaussian decomposition
 # (filled in by Task 4-5)
 
