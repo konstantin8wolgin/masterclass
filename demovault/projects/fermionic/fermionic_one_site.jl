@@ -61,7 +61,35 @@ let
 end
 
 # %% Phase 1: Analytic three-Gaussian decomposition
-# (filled in by Task 4-5)
+#
+# Identity:
+#   e^{-S(φ)} = Σ_{j=0}^{2}  w_j · exp( -(φ - i*m_j)^2 / (2σ²) )
+# with σ² = U/β, m_j = j·U, w = (1, 2 e^{βμ}, e^{β(2μ - U)}).
+
+"""
+    mixture_params(U, beta, mu) -> (weights, centers, sigma2)
+
+Returns the analytic three-Gaussian decomposition of `exp(-S(φ; U, β, μ))`
+for the one-site spin-1/2 Hubbard model.
+- `weights[j+1] = w_j` for j = 0, 1, 2
+- `centers[j+1] = m_j` (real numbers; the IMAGINARY shifts are i*m_j)
+- `sigma2 = U/β`
+"""
+function mixture_params(U::Float64, beta::Float64, mu::Float64)
+    weights = [1.0, 2*exp(beta*mu), exp(beta*(2mu - U))]
+    centers = [0.0, U, 2U]
+    sigma2  = U / beta
+    return weights, centers, sigma2
+end
+
+# Sanity check on the headline case.
+let
+    w, m, σ2 = mixture_params(U_HL, BETA_HL, MU_HL)
+    @assert w ≈ [1.0, 2*exp(BETA_HL*MU_HL), exp(BETA_HL*(2*MU_HL - U_HL))]
+    @assert m == [0.0, U_HL, 2*U_HL]
+    @assert σ2 ≈ U_HL / BETA_HL
+    println("mixture_params headline: w=$w, m=$m, σ²=$σ2  ✓")
+end
 
 # %% Phase 2: Partition function and analytic observables
 # (filled in by Task 6-7)
