@@ -91,6 +91,52 @@ let
     println("mixture_params headline: w=$w, m=$m, σ²=$σ2  ✓")
 end
 
+"""
+    p_mix(phi, U, beta, mu) -> ComplexF64
+
+Returns the analytic mixture density evaluated at `phi`.
+Equal to `exp(-S(phi, U, beta, mu))` up to floating-point round-off.
+"""
+function p_mix(phi, U::Float64, beta::Float64, mu::Float64)
+    w, m, σ2 = mixture_params(U, beta, mu)
+    s = zero(ComplexF64)
+    for j in 1:3
+        s += w[j] * exp(-(phi - im*m[j])^2 / (2σ2))
+    end
+    return s
+end
+
+# Verification gate: RELATIVE pointwise agreement < 1e-12 over φ in [-6, 6].
+# Absolute differences are not meaningful here — at headline (U=1, β=10, μ=1)
+# the Boltzmann weight reaches ~1e13 near its peak, so absolute Δ is bounded
+# below by ~1e-3 even when the algebra is exact. Use relative error instead.
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    grid = range(-6.0, 6.0; length=601)
+    b   = boltzmann.(grid, U, beta, mu)
+    pm  = p_mix.(grid, U, beta, mu)
+    rel = abs.(pm .- b) ./ max.(abs.(b), 1.0)   # denominator clamp avoids /0 in tails
+    err = maximum(rel)
+    @assert err < 1e-12 "mixture vs Boltzmann relative mismatch: max|Δ|/|e^{-S}| = $err"
+    println("max relative |p_mix - e^{-S}|/|e^{-S}| over φ∈[-6,6] = $err  ✓")
+end
+
+# Plot Re and Im of both functions overlaid.
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    grid = range(-6.0, 6.0; length=601)
+    pm = p_mix.(grid, U, beta, mu)
+    b  = boltzmann.(grid, U, beta, mu)
+    pre = plot(grid, real.(b); label="Re e^{-S}", lw=2)
+    plot!(pre, grid, real.(pm); label="Re p_mix", lw=2, ls=:dash)
+    pim = plot(grid, imag.(b); label="Im e^{-S}", lw=2)
+    plot!(pim, grid, imag.(pm); label="Im p_mix", lw=2, ls=:dash)
+    pcomb = plot(pre, pim; layout=(1,2), size=(1100, 400),
+                 xlabel="φ", title="Mixture vs e^{-S}, headline (U,β,μ)=(1,10,1)")
+    savefig(pcomb, joinpath(@__DIR__, "data", "01_mixture_vs_target.png"))
+    println("Saved data/01_mixture_vs_target.png")
+end
+
 # %% Phase 2: Partition function and analytic observables
 # (filled in by Task 6-7)
 
