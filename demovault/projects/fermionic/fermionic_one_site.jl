@@ -186,6 +186,39 @@ let
     println("Z(Fock trace) == Z(Gaussian integral) for all 8 cases  ✓")
 end
 
+# Build the 8-case grid and tabulate analytic observables.
+const CASES = [(U=U, β=β, μ=μ)
+               for U in (1.0, 4.0), β in (2.0, 10.0), μ in (0.0, 1.0)]
+const CASES_VEC = vec(CASES)
+
+analytic_rows = map(CASES_VEC) do c
+    obs = fock_trace_observables(c.U, c.β, c.μ)
+    (; c.U, c.β, c.μ, obs.Z, obs.n_mean, obs.n2_mean, obs.nup_ndown)
+end
+
+println("Analytic observables per case:")
+println(" U    β     μ     Z            ⟨n⟩      ⟨n²⟩     ⟨n↑n↓⟩")
+for r in analytic_rows
+    println(rpad(string(r.U), 5), rpad(string(r.β), 6), rpad(string(r.μ), 6),
+            rpad(string(round(r.Z;        digits=6)), 13),
+            rpad(string(round(r.n_mean;    digits=4)),  9),
+            rpad(string(round(r.n2_mean;   digits=4)),  9),
+            rpad(string(round(r.nup_ndown; digits=4)),  9))
+end
+
+# Persist the analytic table and the mixture parameters per case.
+let
+    mixture_per_case = map(CASES_VEC) do c
+        w, m, σ2 = mixture_params(c.U, c.β, c.μ)
+        (; c.U, c.β, c.μ, weights=w, centers=m, sigma2=σ2)
+    end
+    jldsave(joinpath(@__DIR__, "data", "observables.jld2");
+            analytic = analytic_rows)
+    jldsave(joinpath(@__DIR__, "data", "mixture_params.jld2");
+            mixtures = mixture_per_case)
+    println("Saved data/observables.jld2 and data/mixture_params.jld2")
+end
+
 # %% Phase 3: PIK sampler
 # (filled in by Task 8-9)
 
