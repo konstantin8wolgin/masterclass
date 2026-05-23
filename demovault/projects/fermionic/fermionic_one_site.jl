@@ -393,5 +393,94 @@ let
     println("Saved data/samples_headline.jld2 and extended data/observables.jld2")
 end
 
-# %% Phase 4: Distribution comparison plot
-# (filled in by Task 10-11)
+# %% Phase 4: Distribution comparison and per-case observable agreement
+#
+# Two figures:
+#  (a) `04_t1_comparison.png` — marquee histogram of the headline base
+#      samples φ₀ overlaid on the analytic 𝒩(0, σ²=U/β) (the `linearphi4`
+#      `04_t1_comparison`-style plot). At one site the deformed-contour
+#      pull-back of e^{-S}/Z onto the φ₀ axis is exactly 𝒩(0, σ²) for
+#      every component j — so this is the right thing to histogram.
+#  (b) `04_observables_per_case.png` — 2×4 grid, one panel per case,
+#      analytic vs sampled bars for ⟨n⟩, ⟨n²⟩, ⟨n↑n↓⟩ (5·SE error bars).
+#
+# Verification gate: 1-sample Kolmogorov–Smirnov distance of φ₀ vs the
+# analytic CDF must lie below 5×(α=0.05 critical = 1.36/√M). Per-case
+# observable agreement was already gated in Phase 3.
+
+# Load the headline base samples persisted at the end of Phase 3.
+let
+    f = jldopen(joinpath(@__DIR__, "data", "samples_headline.jld2"), "r")
+    global PHI0_HL = f["phi0"]
+    @assert f["U"] == U_HL && f["beta"] == BETA_HL && f["mu"] == MU_HL "headline parameters mismatch in samples_headline.jld2"
+    close(f)
+    println("Loaded $(length(PHI0_HL)) headline φ₀ samples")
+end
+
+# KS gate: φ₀ samples vs analytic 𝒩(0, σ²).
+let
+    σ = sqrt(U_HL / BETA_HL)
+    M = length(PHI0_HL)
+    sorted_φ = sort(PHI0_HL)
+    F_emp = (1:M) ./ M
+    F_ana = cdf.(Normal(0.0, σ), sorted_φ)
+    D     = maximum(abs.(F_emp .- F_ana))
+    crit  = 1.36 / sqrt(M)
+    @assert D < 5 * crit "KS distance φ₀ vs 𝒩(0, σ²) = $D exceeds 5·crit = $(5*crit)"
+    println("KS distance φ₀ vs 𝒩(0, σ²) = $(round(D; sigdigits=3))   (5·crit_{α=0.05} = $(round(5*crit; sigdigits=3)))  ✓")
+end
+
+# (a) Marquee histogram: φ₀ samples vs 𝒩(0, σ²).
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    σ = sqrt(U / beta)
+    pmarquee = plot(title="Headline (U,β,μ)=($U,$beta,$mu): PIK base samples vs analytic Normal(0, σ²=U/β)",
+                    xlabel="φ₀", ylabel="density",
+                    legend=:topright, size=(750, 450))
+    histogram!(pmarquee, PHI0_HL;
+               bins=70, normalize=:pdf,
+               label="PIK samples (M=$(length(PHI0_HL)))",
+               fillalpha=0.55, color=:steelblue, linewidth=0)
+    grid = range(-4σ, 4σ; length=400)
+    plot!(pmarquee, grid, pdf.(Normal(0, σ), grid);
+          label="Normal(0, σ²=$(round(σ^2; sigdigits=3)))",
+          color=:orange, lw=2.5)
+    savefig(pmarquee, joinpath(@__DIR__, "data", "04_t1_comparison.png"))
+    println("Saved data/04_t1_comparison.png")
+end
+
+# (b) 2×4 per-case observable grid.
+let
+    panels = Any[]
+    for c in CASES_VEC
+        # Find the matching sampled row.
+        sr = nothing
+        for row in sampled_rows
+            if row.U == c.U && row.β == c.β && row.μ == c.μ
+                sr = row; break
+            end
+        end
+        @assert sr !== nothing "missing sampled row for case $c"
+        labels = ["⟨n⟩", "⟨n²⟩", "⟨n↑n↓⟩"]
+        x      = [1.0, 2.0, 3.0]
+        ana    = [sr.n_analytic, sr.n2_analytic, sr.nud_analytic]
+        smp    = [sr.n_sampled,  sr.n2_sampled,  sr.nud_sampled]
+        ses    = [sr.n_se,       sr.n2_se,       sr.nud_se]
+        p = bar(x .- 0.18, ana; bar_width=0.32,
+                color=:lightsteelblue, linewidth=0, label="analytic",
+                xticks=(x, labels),
+                title="U=$(c.U), β=$(c.β), μ=$(c.μ)",
+                ylabel="value",
+                ylims=(0, max(maximum(ana), maximum(smp)) * 1.25 + 1e-3),
+                legend=:topleft, titlefontsize=10, tickfontsize=8,
+                legendfontsize=7)
+        scatter!(p, x .+ 0.18, smp;
+                 yerror=5 .* ses, color=:darkorange,
+                 markersize=5, label="sampled (±5·SE)", linewidth=2)
+        push!(panels, p)
+    end
+    pgrid = plot(panels...; layout=(2,4), size=(1700, 750),
+                 plot_title="PIK observables vs analytic, all 8 cases (M=$M_TABLE)")
+    savefig(pgrid, joinpath(@__DIR__, "data", "04_observables_per_case.png"))
+    println("Saved data/04_observables_per_case.png")
+end
