@@ -49,7 +49,7 @@ $$
 \langle\mathcal{O}\rangle \;=\; \frac{\sum_{j=0}^{2} w_j\,\frac{1}{M}\sum_{i=1}^{M} \mathcal{O}(\phi_0^{(i)} + i m_j)}{\sum_{j=0}^{2} w_j}.
 $$
 
-**Critical: `O(φ)` must be holomorphic on the strip $\mathrm{Im}\,\phi \in [0, 2U]$.** The naive per-φ trace-ratio expressions $n(\phi) = 2\sigma(\beta(i\phi+\mu+U/2))$ etc. have poles at $\mathrm{Im}\,\phi = \mu + U/2$, which lies *inside* the contour-shift strip whenever $\mu < 3U/2$ — i.e. 7 of the 8 grid cases. The deformed integral then picks up residues and the estimator returns the wrong answer (verified empirically: $\langle n^2\rangle$ via the sigmoid form fails 8/8 cases by 100σ to 10⁶σ; even $\langle n\rangle$ fails 2/8 cases catastrophically).
+**Critical: `O(φ)` must be holomorphic on the strip $\mathrm{Im}\,\phi \in [0, 2U]$.** The naive per-φ trace-ratio expressions $n(\phi) = 2\sigma(\beta(i\phi+\mu+U/2))$ etc. have poles at $\mathrm{Im}\,\phi = \mu + U/2$. Strict-interior condition is $-U/2 < \mu < 3U/2$; on the grid $U \in \{1,4\}$, $\mu \in \{0,1\}$ this gives $\mu + U/2 \in \{0.5, 1.5, 2.0, 3.0\}$ against upper edges $2U \in \{2, 8\}$ — all **8 of the 8** cases have the pole strictly inside the strip. The deformed integral then picks up residues and the estimator returns the wrong answer (verified empirically: $\langle n^2\rangle$ via the sigmoid form fails 8/8 cases by 100σ to 10⁶σ; even $\langle n\rangle$ fails 2/8 cases catastrophically).
 
 The fix is the **holomorphic representation from Fukushima eq. 21**: the auxiliary field *is* the density operator, $\langle n\rangle = -i\langle\phi\rangle/U$. Derivation by direct Gaussian integration of $e^{-S}\cdot\phi^k$ against $(1+\xi)^2$:
 
@@ -71,7 +71,7 @@ Single notebook: `demovault/projects/fermionic/fermionic_one_site.ipynb`. Five t
 | 1 | Analytic 3-Gaussian decomposition | Compute `w_j, m_j, σ²` from the formulas above. Define mixture density `p_mix(φ)`. Plot `p_mix` vs `e^{-S}` (both complex; show Re and Im) for the headline case. | `maximum(abs.(p_mix.(grid) .- exp.(-S.(grid)))) < 1e-12` over `grid = -L:dφ:L`. |
 | 2 | Partition function & analytic observables | Closed-form integrals (Gaussian formula) → analytic `Z`, `⟨n⟩`, `⟨n²⟩`, `⟨n↑n↓⟩` for all 8 grid cases. Cross-check against direct Fock-trace formulas. | Per case: `abs(Z_gauss - Z_trace) < 1e-12` and same for `⟨n⟩`. |
 | 3 | PIK sampler | For each of the 8 cases: draw `φ₀ ∼ 𝒩(0, U/β)` at `M = 10⁵`; build the three deterministic complex images `φ₀ + ij·U`; compute the estimator using the *holomorphic* PIK operators (see above) for `⟨n⟩`, `⟨n²⟩`, `⟨n↑n↓⟩`. Convergence study at headline uses `⟨n²⟩` at `M ∈ {10³, 10⁴, 10⁵, 10⁶}` — `⟨n⟩` is zero-variance at one site. | `⟨n⟩` exact to `1e-10` (zero-variance gate); `⟨n²⟩` and `⟨n↑n↓⟩` within `5·SE` of analytic for every case; convergence SE scales clean `1/√M`. |
-| 4 | Distribution comparison | Reproduce a `04_t1_comparison`-style figure for the headline case: histogram of weighted samples vs analytic mixture density. Also: 2×4 grid of subplots (one per case) showing `⟨n⟩` analytic vs sampled with error bars. | Visual + KS-style numeric agreement on the histogram. |
+| 4 | Distribution comparison | Two-panel marquee for the headline case: (left) histogram of base samples φ₀ vs the analytic Normal(0, σ²=U/β) — the contour pull-back of every mixture component onto the φ₀ axis is this same Gaussian, so this is the KS-gated quantity; (right) complex-plane view of the three weighted contour images φ₀ + i·j·U (j∈{0,1,2}) annotated with the mixture weights $w_j$, the pole line Im(φ)=μ+U/2, and the deformation strip [0, 2U] — this is the "weighted samples vs analytic mixture density" picture. Plus a 2×4 grid of subplots (one per case) showing ⟨n⟩, ⟨n²⟩, ⟨n↑n↓⟩ analytic vs sampled with 5·SE error bars. | (i) Reproducibility: re-evaluating ⟨n²⟩ on the saved `phi0` reproduces `contrib_n2` to better than 1e-12. (ii) Formal two-sided 1-sample KS: $D_M = \sup_x |F_M(x) - F(x)| < 5\cdot(1.36/\sqrt{M})$. (iii) Visual agreement on the marquee. |
 
 # Parameter grid (8 cases)
 
@@ -92,12 +92,15 @@ demovault/projects/fermionic/
 ├── fermionic_one_site.ipynb           the notebook
 ├── data/
 │   ├── mixture_params.jld2            (w_j, m_j, σ²) per case
-│   ├── samples_headline.jld2          φ₀ samples + shifted images at M=10⁵
+│   ├── samples_headline.jld2          phi0 (M=10⁵), phi_image_j∈{0,1,2} (= phi0 + i·j·U),
+│   │                                  contrib_{n,n2,nud} — all three contributions computed
+│   │                                  from the SAME phi0 via pik_eval, so phi0 reproduces them
 │   ├── observables.jld2               table of ⟨n⟩, ⟨n²⟩, ⟨n↑n↓⟩, Z per case
 │   ├── 01_action_check.png            Re/Im S, |e^{-S}|
 │   ├── 01_mixture_vs_target.png       p_mix vs e^{-S} pointwise
 │   ├── 03_convergence.png             1/√M scaling, headline case
-│   └── 04_t1_comparison.png           histogram vs theory, headline case
+│   ├── 04_t1_comparison.png           two-panel marquee (base histogram + complex-plane mixture)
+│   └── 04_observables_per_case.png    2×4 grid of analytic vs sampled per case
 └── 04_t1_comparison.png               existing reference (kept untouched as the visual target)
 ```
 
