@@ -220,7 +220,178 @@ let
 end
 
 # %% Phase 3: PIK sampler
-# (filled in by Task 8-9)
+#
+# Estimator (Fukushima 2026 eq. 20):
+#   ⟨O⟩ = Σ_j w_j · (1/M) Σ_i O(φ₀^{(i)} + i m_j)  /  Σ_j w_j
+# with φ₀ ∼ 𝒩(0, σ² = U/β) drawn M times.
+
+"""
+    pik_sample(O, U, beta, mu; M, rng) -> NamedTuple
+
+Returns the PIK estimate of <O> from `M` real-Gaussian samples as
+`(; est, se_re, se_im, phi0, contrib)`:
+
+- `est::ComplexF64` — Monte Carlo mean of the per-sample contributions.
+- `se_re`, `se_im::Float64` — standard error of `real`/`imag` parts.
+  The imaginary part of `<O>` is zero *in expectation*; at finite `M`
+  it has a fluctuation of the same order as `se_im`. Gate Im with a
+  statistical bound, not a hard tolerance.
+- `phi0::Vector{Float64}` — base samples (kept for histograms).
+- `contrib::Vector{ComplexF64}` — per-sample weighted contributions
+  (their mean is `est`; their std/√M is the SE).
+"""
+function pik_sample(O, U::Float64, beta::Float64, mu::Float64;
+                    M::Int, rng::AbstractRNG)
+    w, m, σ2 = mixture_params(U, beta, mu)
+    σ = sqrt(σ2)
+    phi0 = randn(rng, M) .* σ      # 𝒩(0, σ²)
+    Wtot = sum(w)
+    contrib = zeros(ComplexF64, M)
+    for j in 1:3
+        @inbounds for i in 1:M
+            contrib[i] += w[j] * O(phi0[i] + im*m[j])
+        end
+    end
+    contrib ./= Wtot
+    est = sum(contrib) / M
+    se_re = std(real.(contrib); corrected=true) / sqrt(M)
+    se_im = std(imag.(contrib); corrected=true) / sqrt(M)
+    return (; est, se_re, se_im, phi0, contrib)
+end
+
+# PIK observables for the Hubbard one-site model.
+#
+# Critical subtlety: the per-φ trace-ratio operators 2·σ(β(iφ+μ+U/2)),
+# 2s+2s², s² (where s = σ(β(iφ+μ+U/2))) have logarithmic-derivative poles
+# at Im(φ) = μ + U/2 — inside the contour-shift strip [0, 2U] for 7 of
+# the 8 parameter cases. Contour-deforming the integral to R + ij·U
+# crosses these poles and gives the WRONG answer.
+#
+# The fix is the HOLOMORPHIC representation from Fukushima eq. 21:
+# the auxiliary field IS the density, n = -i⟨φ⟩/U. Polynomial in φ,
+# so every contour shift is exact. Derivation by direct Gaussian
+# integration of e^{-S(φ)}·φ^k against the (1+ξ)² expansion:
+#
+#   ⟨-iφ⟩_phys    = U · ⟨n⟩
+#   ⟨φ²⟩_phys    = U/β − U² · ⟨n²⟩
+#   n↑n↓         = (n² − n)/2   (fermion algebra)
+#
+# Yielding the holomorphic PIK observables:
+n_op(phi, U, beta, mu)       = -im * phi / U
+n2_op(phi, U, beta, mu)      = 1/(beta*U) - phi^2 / U^2
+nupdown_op(phi, U, beta, mu) = (n2_op(phi, U, beta, mu) - n_op(phi, U, beta, mu)) / 2
+
+# Sanity check the sampler.
+# ⟨n⟩ via O = -iφ/U has identically constant real part per sample
+# (Re(-iφ_i/U) = 0 for real φ_i, plus the constant Fock value), so the
+# estimator is exact to machine precision and SE_Re ≈ 1e-18. Gate it
+# with an absolute tolerance instead of |Δ|/SE.
+# ⟨n²⟩ has nontrivial variance from the φ² term; gate statistically.
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    rng = MersenneTwister(20260522)
+    r_n  = pik_sample(phi -> n_op(phi,  U, beta, mu), U, beta, mu; M = 100_000, rng = rng)
+    r_n2 = pik_sample(phi -> n2_op(phi, U, beta, mu), U, beta, mu; M = 100_000, rng = rng)
+    ana = fock_trace_observables(U, beta, mu)
+    @assert abs(real(r_n.est)  - ana.n_mean)  < 1e-10 "⟨n⟩ off by $(abs(real(r_n.est) - ana.n_mean))"
+    @assert abs(real(r_n2.est) - ana.n2_mean) < 5*r_n2.se_re "⟨n²⟩ off by $(abs(real(r_n2.est) - ana.n2_mean)) > 5·SE=$(5*r_n2.se_re)"
+    println("Headline ⟨n⟩  = $(real(r_n.est))   (analytic $(ana.n_mean), exact to 1e-10)  ✓")
+    println("Headline ⟨n²⟩ = $(real(r_n2.est)) ± $(r_n2.se_re)   (analytic $(ana.n2_mean))  ✓")
+end
+
+# Full 8-case sampling table at M = 10^5. Gate per observable:
+#   ⟨n⟩      — absolute (zero-variance estimator, machine-precision)
+#   ⟨n²⟩     — statistical, |Δ| < 5·SE
+#   ⟨n↑n↓⟩   — statistical, |Δ| < 5·SE
+const M_TABLE = 100_000
+
+sampled_rows = let
+    rng = MersenneTwister(20260522)
+    rows = []
+    for c in CASES_VEC
+        U, β, μ = c.U, c.β, c.μ
+        analytic = fock_trace_observables(U, β, μ)
+        rn   = pik_sample(phi -> n_op(phi,       U, β, μ), U, β, μ; M = M_TABLE, rng = rng)
+        rn2  = pik_sample(phi -> n2_op(phi,      U, β, μ), U, β, μ; M = M_TABLE, rng = rng)
+        rnup = pik_sample(phi -> nupdown_op(phi, U, β, μ), U, β, μ; M = M_TABLE, rng = rng)
+        @assert abs(real(rn.est) - analytic.n_mean) < 1e-10 "Case ($U,$β,$μ): ⟨n⟩ off by $(abs(real(rn.est) - analytic.n_mean))"
+        for (name, r, ana) in (("⟨n²⟩", rn2, analytic.n2_mean),
+                               ("⟨n↑n↓⟩", rnup, analytic.nup_ndown))
+            diff = abs(real(r.est) - ana)
+            @assert diff < 5 * r.se_re "Case ($U,$β,$μ): $name diff=$diff > 5·SE=$(5*r.se_re)"
+        end
+        push!(rows, (; U, β, μ,
+                     n_sampled   = real(rn.est),   n_se   = rn.se_re,   n_analytic   = analytic.n_mean,
+                     n2_sampled  = real(rn2.est),  n2_se  = rn2.se_re,  n2_analytic  = analytic.n2_mean,
+                     nud_sampled = real(rnup.est), nud_se = rnup.se_re, nud_analytic = analytic.nup_ndown))
+    end
+    rows
+end
+
+println("Sampled vs analytic (M = $M_TABLE, all 8 cases):")
+println(" U    β     μ    ⟨n⟩ (exact)    ⟨n²⟩ sampled (SE)      analytic    |Δ|/SE")
+for r in sampled_rows
+    z = abs(r.n2_sampled - r.n2_analytic) / r.n2_se
+    println(rpad(string(r.U), 5), rpad(string(r.β), 6), rpad(string(r.μ), 5),
+            rpad(string(round(r.n_sampled; digits=5)), 15),
+            rpad("$(round(r.n2_sampled; digits=5)) ± $(round(r.n2_se; sigdigits=2))", 25),
+            rpad(string(round(r.n2_analytic; digits=5)), 12),
+            round(z; digits=2))
+end
+
+# Headline convergence study: ⟨n²⟩ at M ∈ {10³, 10⁴, 10⁵, 10⁶}. The SE
+# should scale as 1/√M. (⟨n⟩ is zero-variance under polynomial PIK at one
+# site, so there is nothing to converge — ⟨n²⟩ is the natural choice.)
+const M_CONV = (10^3, 10^4, 10^5, 10^6)
+
+conv = let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    rng = MersenneTwister(20260601)
+    Ms = Int[]
+    ests = Float64[]
+    ses = Float64[]
+    for M in M_CONV
+        r = pik_sample(phi -> n2_op(phi, U, beta, mu), U, beta, mu; M = M, rng = rng)
+        push!(Ms, M); push!(ests, real(r.est)); push!(ses, r.se_re)
+        println("M = $(lpad(M, 7)):  ⟨n²⟩ = $(round(real(r.est); digits=6)) ± $(round(r.se_re; sigdigits=3))")
+    end
+    (; Ms, ests, ses)
+end
+
+let
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    analytic = fock_trace_observables(U, beta, mu).n2_mean
+    Mvec = collect(conv.Ms)
+    ref = conv.ses[1] .* sqrt.(Mvec[1] ./ Mvec)
+    p = plot(Mvec, conv.ses; xscale=:log10, yscale=:log10,
+             marker=:circle, lw=2, label="measured SE",
+             xlabel="M (samples)", ylabel="SE[Re ⟨n²⟩]",
+             title="Headline (U,β,μ)=($U,$beta,$mu): 1/√M convergence of ⟨n²⟩")
+    plot!(p, Mvec, ref; ls=:dash, lw=2, label="1/√M reference")
+    savefig(p, joinpath(@__DIR__, "data", "03_convergence.png"))
+    println("Saved data/03_convergence.png  (analytic ⟨n²⟩ = $analytic)")
+end
+
+# Persist headline base samples + per-observable contributions, and
+# extend the analytic table with sampled rows + convergence data.
+let
+    rng = MersenneTwister(20260522)
+    U, beta, mu = U_HL, BETA_HL, MU_HL
+    rn   = pik_sample(phi -> n_op(phi,       U, beta, mu), U, beta, mu; M = M_TABLE, rng = rng)
+    rn2  = pik_sample(phi -> n2_op(phi,      U, beta, mu), U, beta, mu; M = M_TABLE, rng = rng)
+    rnup = pik_sample(phi -> nupdown_op(phi, U, beta, mu), U, beta, mu; M = M_TABLE, rng = rng)
+    jldsave(joinpath(@__DIR__, "data", "samples_headline.jld2");
+            phi0      = rn.phi0,
+            contrib_n = rn.contrib,
+            contrib_n2  = rn2.contrib,
+            contrib_nud = rnup.contrib,
+            U = U, beta = beta, mu = mu, M = M_TABLE)
+    f = jldopen(joinpath(@__DIR__, "data", "observables.jld2"), "r")
+    analytic = f["analytic"]; close(f)
+    jldsave(joinpath(@__DIR__, "data", "observables.jld2");
+            analytic = analytic, sampled = sampled_rows, convergence = conv)
+    println("Saved data/samples_headline.jld2 and extended data/observables.jld2")
+end
 
 # %% Phase 4: Distribution comparison plot
 # (filled in by Task 10-11)
