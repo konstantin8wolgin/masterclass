@@ -1,0 +1,10 @@
+{
+ "note": "files NOT in this backup (too big or secret-like); they remain on the laptop",
+ "excluded": [
+  {
+   "path": "demovault/projects/fermionic/Manifest.toml",
+   "reason": "secret-scan",
+   "bytes": 0
+  }
+ ]
+}
